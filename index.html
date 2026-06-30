@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Caffeine POS - ระบบสั่งขายสะสมแต้มร้านกาแฟ</title>
+    <!-- Stylesheet -->
+    <link rel="stylesheet" href="style.css">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js for Dashboard -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Supabase Client JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+    <!-- Overlay Login Screen -->
+    <div id="auth-overlay" class="auth-overlay">
+        <div class="auth-card">
+            <div class="auth-logo">
+                <i class="fa-solid fa-mug-hot"></i>
+            </div>
+            <h2>ยินดีต้อนรับสู่ Caffeine POS</h2>
+            <p>กรุณาใส่รหัส PIN พนักงานเพื่อเข้าใช้งานระบบ (PIN ตัวอย่าง: 1234 หรือ 9999)</p>
+            
+            <div class="pin-display">
+                <div class="pin-dot" id="dot-1"></div>
+                <div class="pin-dot" id="dot-2"></div>
+                <div class="pin-dot" id="dot-3"></div>
+                <div class="pin-dot" id="dot-4"></div>
+            </div>
+            
+            <div id="auth-error" class="auth-error"></div>
+            
+            <div class="pin-keyboard">
+                <button class="pin-btn" onclick="pressPin('1')">1</button>
+                <button class="pin-btn" onclick="pressPin('2')">2</button>
+                <button class="pin-btn" onclick="pressPin('3')">3</button>
+                <button class="pin-btn" onclick="pressPin('4')">4</button>
+                <button class="pin-btn" onclick="pressPin('5')">5</button>
+                <button class="pin-btn" onclick="pressPin('6')">6</button>
+                <button class="pin-btn" onclick="pressPin('7')">7</button>
+                <button class="pin-btn" onclick="pressPin('8')">8</button>
+                <button class="pin-btn" onclick="pressPin('9')">9</button>
+                <button class="pin-btn action" onclick="clearPin()">เคลียร์</button>
+                <button class="pin-btn" onclick="pressPin('0')">0</button>
+                <button class="pin-btn action" onclick="deletePin()"><i class="fa-solid fa-backspace"></i></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main POS App Container -->
+    <div class="app-container">
+        
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="sidebar-brand">
+                <i class="fa-solid fa-mug-hot text-accent"></i>
+                <span>Caffeine POS</span>
+            </div>
+            
+            <ul class="sidebar-menu">
+                <li class="menu-item active" id="menu-pos">
+                    <button onclick="switchView('pos')">
+                        <i class="fa-solid fa-cash-register"></i>
+                        <span>สั่งซื้อสินค้า</span>
+                    </button>
+                </li>
+                <li class="menu-item" id="menu-dashboard">
+                    <button onclick="switchView('dashboard')">
+                        <i class="fa-solid fa-chart-line"></i>
+                        <span>แดชบอร์ด</span>
+                    </button>
+                </li>
+                <li class="menu-item" id="menu-customers">
+                    <button onclick="switchView('customers')">
+                        <i class="fa-solid fa-users"></i>
+                        <span>ระบบสมาชิก</span>
+                    </button>
+                </li>
+                <li class="menu-item" id="menu-transactions">
+                    <button onclick="switchView('transactions')">
+                        <i class="fa-solid fa-receipt"></i>
+                        <span>ประวัติการขาย</span>
+                    </button>
+                </li>
+                <li class="menu-item" id="menu-settings">
+                    <button onclick="switchView('settings')">
+                        <i class="fa-solid fa-sliders"></i>
+                        <span>ตั้งค่าระบบ</span>
+                    </button>
+                </li>
+            </ul>
+            
+            <div class="sidebar-footer">
+                <div class="user-profile">
+                    <div class="user-avatar" id="emp-avatar">E</div>
+                    <div class="user-info">
+                        <span class="user-name" id="emp-name">พนักงาน</span>
+                        <span class="user-role" id="emp-role">ผู้ใช้งาน</span>
+                    </div>
+                </div>
+                <button class="logout-btn" onclick="logout()">
+                    <i class="fa-solid fa-right-from-bracket"></i>
+                    <span>ออกจากระบบ</span>
+                </button>
+            </div>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            
+            <!-- VIEW: POS WORKSPACE -->
+            <div id="view-pos" class="view-panel active">
+                <div class="view-header">
+                    <div class="view-title">
+                        <h1>สั่งซื้อสินค้า</h1>
+                        <p id="pos-subtitle">ยินดีต้อนรับเข้าสู่ช่วงเวลาเสิร์ฟกาแฟสุดพิเศษ</p>
+                    </div>
+                </div>
+                
+                <div class="pos-layout">
+                    <!-- Left: Catalog -->
+                    <div class="pos-products-area">
+                        <div class="pos-categories" id="category-tabs">
+                            <button class="category-tab active" onclick="filterCategory('all')">ทั้งหมด</button>
+                            <button class="category-tab" onclick="filterCategory('coffee')">กาแฟ</button>
+                            <button class="category-tab" onclick="filterCategory('bakery')">เบเกอรี่</button>
+                        </div>
+                        
+                        <div class="products-grid" id="products-grid">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                    
+                    <!-- Right: Cart & Checkout -->
+                    <div class="pos-cart-area">
+                        <div class="cart-header">
+                            <h2>รายการสินค้า</h2>
+                            <button class="clear-cart-btn" onclick="clearCart()">ล้างตะกร้า</button>
+                        </div>
+                        
+                        <!-- Cart items list -->
+                        <div class="cart-items" id="cart-items">
+                            <!-- Populated by JS when items added -->
+                        </div>
+                        
+                        <!-- Loyalty Points Customer integration -->
+                        <div class="cart-loyalty-section">
+                            <div class="loyalty-search-box" id="loyalty-search-container">
+                                <input type="text" class="loyalty-input" id="customer-search-phone" placeholder="ระบุเบอร์โทรลูกค้า (สะสมแต้ม)">
+                                <button class="loyalty-search-btn" onclick="searchLoyaltyCustomer()">ค้นหา</button>
+                            </div>
+                            
+                            <!-- Display active loyalty customer -->
+                            <div class="loyalty-active-user hidden" id="loyalty-active-user">
+                                <div class="active-user-details">
+                                    <span class="active-user-name" id="active-customer-name">สมชาย ใจดี</span>
+                                    <span class="active-user-points" id="active-customer-points">แต้มสะสม: 120 แต้ม</span>
+                                </div>
+                                <button class="active-user-remove" onclick="removeLoyaltyCustomer()">ยกเลิก</button>
+                            </div>
+                            
+                            <!-- Points redemption options -->
+                            <div class="redeem-points-box hidden" id="redeem-points-box">
+                                <div class="redeem-points-row">
+                                    <label class="redeem-toggle">
+                                        <input type="checkbox" id="use-points-checkbox" onchange="togglePointsRedemption()">
+                                        <span>ใช้ 100 แต้ม แลกส่วนลด 50 บาท</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Summary -->
+                        <div class="cart-summary">
+                            <div class="summary-row">
+                                <span>ยอดรวม</span>
+                                <span id="cart-subtotal">฿0.00</span>
+                            </div>
+                            <div class="summary-row" id="discount-row" style="display: none; color: var(--danger);">
+                                <span>ส่วนลดแต้มสะสม</span>
+                                <span id="cart-discount">-฿0.00</span>
+                            </div>
+                            <div class="summary-row total">
+                                <span>ยอดสุทธิ</span>
+                                <span id="cart-total">฿0.00</span>
+                            </div>
+                            
+                            <div class="earn-points-alert hidden" id="earn-points-alert">
+                                ได้รับคะแนนสะสม +<span id="earned-points-value">0</span> แต้ม
+                            </div>
+                            
+                            <button class="checkout-btn" id="checkout-btn" disabled onclick="openPaymentModal()">ชำระเงิน</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VIEW: DASHBOARD -->
+            <div id="view-dashboard" class="view-panel">
+                <div class="view-header">
+                    <div class="view-title">
+                        <h1>แดชบอร์ดสรุปยอดขาย</h1>
+                        <p>รายงานข้อมูล ยอดขาย และสมาชิกสะสมแต้ม</p>
+                    </div>
+                </div>
+                
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon sales">
+                            <i class="fa-solid fa-baht-sign"></i>
+                        </div>
+                        <div class="stat-details">
+                            <span class="stat-title">ยอดขายวันนี้</span>
+                            <span class="stat-value" id="dashboard-today-sales">฿0.00</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon orders">
+                            <i class="fa-solid fa-shopping-bag"></i>
+                        </div>
+                        <div class="stat-details">
+                            <span class="stat-title">จำนวนออเดอร์วันนี้</span>
+                            <span class="stat-value" id="dashboard-today-orders">0 ออเดอร์</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon points">
+                            <i class="fa-solid fa-star"></i>
+                        </div>
+                        <div class="stat-details">
+                            <span class="stat-title">แต้มสะสมสะสมแล้ว</span>
+                            <span class="stat-value" id="dashboard-total-points">0 แต้ม</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon customers">
+                            <i class="fa-solid fa-user-friends"></i>
+                        </div>
+                        <div class="stat-details">
+                            <span class="stat-title">สมาชิกทั้งหมด</span>
+                            <span class="stat-value" id="dashboard-total-customers">0 คน</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="charts-row">
+                    <div class="chart-card">
+                        <h3>ยอดขายรายวัน (ในสัปดาห์นี้)</h3>
+                        <div class="chart-wrapper">
+                            <canvas id="salesLineChart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="chart-card">
+                        <h3>สัดส่วนการขายแบ่งตามประเภท</h3>
+                        <div class="chart-wrapper">
+                            <canvas id="categoryPieChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VIEW: MEMBERS (LOYALTY SYSTEM) -->
+            <div id="view-customers" class="view-panel">
+                <div class="view-header">
+                    <div class="view-title">
+                        <h1>ระบบสมาชิกและสะสมแต้ม</h1>
+                        <p>จัดการข้อมูลลูกค้า และคะแนนสะสม</p>
+                    </div>
+                </div>
+                
+                <div class="customer-layout">
+                    <!-- Left: Customers List -->
+                    <div class="customer-list-panel">
+                        <div class="search-bar-row">
+                            <div class="search-input-wrapper">
+                                <i class="fa-solid fa-magnifying-glass"></i>
+                                <input type="text" id="member-search-input" placeholder="ค้นหาด้วยชื่อ หรือ เบอร์โทรศัพท์..." oninput="searchMembers()">
+                            </div>
+                        </div>
+                        
+                        <div class="customer-table-container">
+                            <table class="customer-table">
+                                <thead>
+                                    <tr>
+                                        <th>ชื่อสมาชิก</th>
+                                        <th>เบอร์โทรศัพท์</th>
+                                        <th>แต้มสะสม</th>
+                                        <th>วันที่ลงทะเบียน</th>
+                                        <th>จัดการ</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="members-table-body">
+                                    <!-- Populated by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- Right: Add Customer Form -->
+                    <div class="customer-form-panel">
+                        <h2 id="customer-form-title">สมัครสมาชิกใหม่</h2>
+                        <form id="customer-form" onsubmit="handleCustomerSubmit(event)">
+                            <input type="hidden" id="customer-id-input">
+                            <div class="form-group">
+                                <label for="customer-name-input">ชื่อ-นามสกุล</label>
+                                <input type="text" id="customer-name-input" required placeholder="เช่น สมชาย ใจดี">
+                            </div>
+                            <div class="form-group">
+                                <label for="customer-phone-input">เบอร์โทรศัพท์</label>
+                                <input type="text" id="customer-phone-input" required placeholder="เช่น 0891234567" pattern="[0-9]{9,10}">
+                            </div>
+                            <div class="form-group">
+                                <label for="customer-points-input">แต้มเริ่มต้น</label>
+                                <input type="number" id="customer-points-input" value="0" min="0">
+                            </div>
+                            <button type="submit" class="form-submit-btn" id="customer-form-btn">บันทึกข้อมูล</button>
+                            <button type="button" class="form-submit-btn cancel hidden" id="customer-form-cancel-btn" onclick="resetCustomerForm()" style="margin-top: 8px; background-color: var(--bg-app); color: var(--text-muted); border: 1px solid var(--border-color);">ยกเลิกการแก้ไข</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VIEW: TRANSACTION HISTORY -->
+            <div id="view-transactions" class="view-panel">
+                <div class="view-header">
+                    <div class="view-title">
+                        <h1>ประวัติการขาย</h1>
+                        <p>ตรวจสอบและดูรายละเอียดการสั่งซื้อย้อนหลัง</p>
+                    </div>
+                </div>
+                
+                <div class="customer-list-panel" style="height: calc(100% - 70px);">
+                    <div class="customer-table-container">
+                        <table class="customer-table">
+                            <thead>
+                                <tr>
+                                    <th>รหัสสั่งซื้อ</th>
+                                    <th>วันที่/เวลา</th>
+                                    <th>พนักงานขาย</th>
+                                    <th>ลูกค้า</th>
+                                    <th>จำนวนเงินสุทธิ</th>
+                                    <th>ส่วนลดแต้ม</th>
+                                    <th>แต้มที่ได้รับ</th>
+                                    <th>เครื่องมือ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="transactions-table-body">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VIEW: SETTINGS -->
+            <div id="view-settings" class="view-panel">
+                <div class="view-header">
+                    <div class="view-title">
+                        <h1>ตั้งค่าระบบ</h1>
+                        <p>จัดการการเชื่อมต่อฐานข้อมูล Supabase และข้อมูลระบบ</p>
+                    </div>
+                </div>
+                
+                <div class="settings-panel">
+                    <h3 class="settings-section-title">ฐานข้อมูล Supabase</h3>
+                    
+                    <div class="form-group">
+                        <label>โหมดการทำงานของฐานข้อมูล</label>
+                        <select id="database-mode-select" onchange="toggleDatabaseMode()" style="padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); font-size: 14px; outline: none; background-color: var(--bg-card);">
+                            <option value="demo">Demo Mode (บันทึกข้อมูลในบราวเซอร์ LocalStorage)</option>
+                            <option value="supabase">Supabase Live Database (ดึง/ส่ง ข้อมูลไปยังคลาวด์)</option>
+                        </select>
+                    </div>
+                    
+                    <div id="supabase-config-inputs" class="hidden">
+                        <div class="form-group">
+                            <label for="supabase-url-input">Supabase Project URL</label>
+                            <input type="text" id="supabase-url-input" placeholder="https://xxxxxx.supabase.co">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="supabase-key-input">Supabase Anon Key</label>
+                            <input type="password" id="supabase-key-input" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...">
+                        </div>
+                        
+                        <button class="settings-btn" onclick="saveSupabaseSettings()">บันทึกและเชื่อมต่อ</button>
+                    </div>
+                    
+                    <div style="margin-top: 24px;">
+                        <span class="supabase-status disconnected" id="supabase-status-indicator">
+                            <i class="fa-solid fa-circle-dot"></i>
+                            <span id="supabase-status-text">ทำงานในโหมดทดลองใช้ (Demo Mode)</span>
+                        </span>
+                    </div>
+
+                    <h3 class="settings-section-title" style="margin-top: 40px;">ข้อมูลและเครื่องมือระบบ</h3>
+                    <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">สำหรับล้างข้อมูลการทดลองและสร้างยอดขายเริ่มต้นเพื่อใช้ทดสอบการวิเคราะห์บน Dashboard</p>
+                    <div style="display: flex; gap: 12px;">
+                        <button class="settings-btn" style="background-color: var(--accent); color: var(--primary);" onclick="generateMockSalesData()">สร้างข้อมูลยอดขายตัวอย่าง (สำหรับกราฟ)</button>
+                        <button class="settings-btn" style="background-color: var(--danger); color: #FFF;" onclick="clearAllData()">ล้างข้อมูลทั้งหมดในระบบ</button>
+                    </div>
+                </div>
+            </div>
+            
+        </main>
+    </div>
+
+    <!-- MODAL: Product Modifiers & Sweetness selection -->
+    <div class="modal-overlay" id="modifier-modal">
+        <div class="modifier-modal">
+            <div class="modifier-header">
+                <h3 id="mod-product-name">เอสเพรสโซ่</h3>
+                <button class="modal-close" onclick="closeModifierModal()">&times;</button>
+            </div>
+            <div class="modifier-body">
+                <input type="hidden" id="mod-product-id">
+                
+                <!-- Option Group: Type (Hot/Iced/Blended) -->
+                <div id="mod-group-type">
+                    <div class="modifier-group-title">รูปแบบการเสิร์ฟ</div>
+                    <div class="option-grid">
+                        <button class="option-btn active" id="opt-type-hot" onclick="selectTypeOption('ร้อน', 0)">ร้อน</button>
+                        <button class="option-btn" id="opt-type-iced" onclick="selectTypeOption('เย็น', 5)">เย็น (+5฿)</button>
+                        <button class="option-btn" id="opt-type-blended" onclick="selectTypeOption('ปั่น', 10)">ปั่น (+10฿)</button>
+                    </div>
+                </div>
+                
+                <!-- Option Group: Sweetness -->
+                <div id="mod-group-sweet">
+                    <div class="modifier-group-title">ระดับความหวาน</div>
+                    <div class="option-grid">
+                        <button class="option-btn" id="opt-sweet-0" onclick="selectSweetOption('หวาน 0% (ไม่หวาน)')">0%</button>
+                        <button class="option-btn" id="opt-sweet-25" onclick="selectSweetOption('หวาน 25% (หวานน้อยมาก)')">25%</button>
+                        <button class="option-btn" id="opt-sweet-50" onclick="selectSweetOption('หวาน 50% (หวานน้อย)')">50%</button>
+                        <button class="option-btn active" id="opt-sweet-100" onclick="selectSweetOption('หวาน 100% (หวานปกติ)')">100%</button>
+                    </div>
+                </div>
+            </div>
+            <div class="modifier-footer">
+                <button class="modal-btn cancel" onclick="closeModifierModal()">ยกเลิก</button>
+                <button class="modal-btn confirm" onclick="confirmProductModifiers()">ใส่ตะกร้า</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: Payment Process & Checkout Selection -->
+    <div class="modal-overlay" id="payment-modal">
+        <div class="modifier-modal" style="width: 480px;">
+            <div class="modifier-header">
+                <h3>ขั้นตอนการชำระเงิน</h3>
+                <button class="modal-close" onclick="closePaymentModal()">&times;</button>
+            </div>
+            <div class="modifier-body" style="gap: 16px;">
+                <div style="text-align: center; margin-bottom: 8px;">
+                    <span style="font-size: 14px; color: var(--text-muted);">ยอดชำระสุทธิ</span>
+                    <h2 style="font-size: 32px; font-weight: 700; color: var(--primary);" id="payment-total-display">฿150.00</h2>
+                </div>
+                
+                <div class="modifier-group-title">ช่องทางการรับเงิน</div>
+                <div class="option-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 8px;">
+                    <button class="option-btn active" id="pay-cash-btn" onclick="selectPaymentMethod('cash')">
+                        <i class="fa-solid fa-money-bill-wave" style="display: block; margin-bottom: 4px; font-size: 18px;"></i> เงินสด
+                    </button>
+                    <button class="option-btn" id="pay-qr-btn" onclick="selectPaymentMethod('qr')">
+                        <i class="fa-solid fa-qrcode" style="display: block; margin-bottom: 4px; font-size: 18px;"></i> QR Code
+                    </button>
+                    <button class="option-btn" id="pay-card-btn" onclick="selectPaymentMethod('card')">
+                        <i class="fa-solid fa-credit-card" style="display: block; margin-bottom: 4px; font-size: 18px;"></i> บัตรเครดิต
+                    </button>
+                </div>
+                
+                <!-- Cash Input (only show if cash is selected) -->
+                <div id="cash-calculator-section">
+                    <div class="form-group">
+                        <label for="cash-received-input">เงินสดที่ได้รับ (บาท)</label>
+                        <input type="number" id="cash-received-input" value="" placeholder="ใส่จำนวนเงิน..." style="font-size: 18px; font-weight: 600; padding: 12px; text-align: center;" oninput="calculateChange()">
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px;">
+                        <button class="option-btn" onclick="quickCash(50)">50</button>
+                        <button class="option-btn" onclick="quickCash(100)">100</button>
+                        <button class="option-btn" onclick="quickCash(500)">500</button>
+                        <button class="option-btn" onclick="quickCash(1000)">1000</button>
+                    </div>
+                    
+                    <div class="receipt-row" style="background-color: var(--bg-app); padding: 12px 16px; border-radius: var(--radius-sm);">
+                        <span style="font-weight: 600;">เงินทอน:</span>
+                        <span id="cash-change-display" style="font-size: 18px; font-weight: 700; color: var(--matcha);">฿0.00</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modifier-footer">
+                <button class="modal-btn cancel" onclick="closePaymentModal()">ย้อนกลับ</button>
+                <button class="modal-btn confirm" id="confirm-payment-btn" onclick="processCheckout()">ยืนยันชำระเงิน</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: Receipt / Success Receipt Dialog -->
+    <div class="modal-overlay" id="receipt-modal-overlay">
+        <div class="receipt-modal">
+            <div class="receipt-icon">
+                <i class="fa-solid fa-circle-check"></i>
+            </div>
+            <h3>ทำรายการสำเร็จ!</h3>
+            <p>บันทึกการสั่งซื้อเรียบร้อยแล้ว</p>
+            
+            <div class="receipt-divider"></div>
+            
+            <!-- Receipt Bill Details -->
+            <div class="receipt-details">
+                <div class="receipt-row">
+                    <span>เลขที่บิล:</span>
+                    <span id="receipt-bill-id">#TX-10001</span>
+                </div>
+                <div class="receipt-row">
+                    <span>วันที่/เวลา:</span>
+                    <span id="receipt-time">30 มิ.ย. 2569 09:50 น.</span>
+                </div>
+                <div class="receipt-row">
+                    <span>พนักงานขาย:</span>
+                    <span id="receipt-cashier">พนักงาน A</span>
+                </div>
+                <div class="receipt-row" id="receipt-customer-row">
+                    <span>ลูกค้า (สะสมแต้ม):</span>
+                    <span id="receipt-customer">สมชาย (0891234567)</span>
+                </div>
+            </div>
+            
+            <div class="receipt-divider"></div>
+            
+            <div class="receipt-items-list" id="receipt-items-list">
+                <!-- List of items printed here -->
+            </div>
+            
+            <div class="receipt-divider"></div>
+            
+            <div class="receipt-details">
+                <div class="receipt-row">
+                    <span>วิธีชำระเงิน:</span>
+                    <span id="receipt-payment-method">เงินสด</span>
+                </div>
+                <div class="receipt-row" id="receipt-cash-received-row">
+                    <span>รับเงินมา:</span>
+                    <span id="receipt-cash-received">฿500.00</span>
+                </div>
+                <div class="receipt-row" id="receipt-change-row">
+                    <span>เงินทอน:</span>
+                    <span id="receipt-change">฿350.00</span>
+                </div>
+                <div class="receipt-row bold" style="margin-top: 6px;">
+                    <span>ยอดสุทธิทั้งหมด:</span>
+                    <span id="receipt-grand-total">฿150.00</span>
+                </div>
+                
+                <!-- Loyalty Points Status -->
+                <div id="receipt-points-section" class="receipt-row" style="background-color: var(--matcha-light); color: var(--matcha); padding: 8px; border-radius: var(--radius-sm); margin-top: 10px; font-weight: 500;">
+                    <span>แต้มสะสมออเดอร์นี้:</span>
+                    <span id="receipt-points-summary">+15 แต้ม (ยอดรวม: 135 แต้ม)</span>
+                </div>
+            </div>
+            
+            <div class="receipt-divider"></div>
+            
+            <button class="checkout-btn" style="margin-top: 0; background-color: var(--primary); color: #FFF;" onclick="closeReceiptAndReset()">เปิดบิลใหม่</button>
+        </div>
+    </div>
+
+    <!-- Application Script -->
+    <script src="app.js"></script>
+</body>
+</html>

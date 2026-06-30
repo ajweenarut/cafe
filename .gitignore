@@ -1,0 +1,13 @@
+# Local files
+.DS_Store
+Thumbs.db
+*.log
+.gemini/
+.agents/
+
+# If they add node_modules later
+node_modules/
+dist/
+.env
+.env.local
+.env.*.local
