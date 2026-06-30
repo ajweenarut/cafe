@@ -2,6 +2,41 @@
 // Handles State, UI view switching, Employee Login, POS Cart operations, Loyalty Points, Database Sync, and Charts.
 
 // ==========================================
+// Safe LocalStorage Wrapper (Prevents crashes in incognito or restricted iframe environments)
+// ==========================================
+const safeStorage = {
+    _data: {},
+    getItem(key) {
+        try {
+            return localStorage.getItem(key);
+        } catch (e) {
+            console.warn('LocalStorage access blocked. Using memory storage.', e);
+            return this._data[key] || null;
+        }
+    },
+    setItem(key, value) {
+        try {
+            localStorage.setItem(key, value);
+            return true;
+        } catch (e) {
+            console.warn('LocalStorage access blocked. Saving to memory storage.', e);
+            this._data[key] = String(value);
+            return false;
+        }
+    },
+    removeItem(key) {
+        try {
+            localStorage.removeItem(key);
+            return true;
+        } catch (e) {
+            console.warn('LocalStorage access blocked. Removing from memory storage.', e);
+            delete this._data[key];
+            return false;
+        }
+    }
+};
+
+// ==========================================
 // 1. Initial State & Configuration
 // ==========================================
 
@@ -62,10 +97,10 @@ let categoryChartInstance = null;
 
 const dbService = {
     async init() {
-        // Load settings from LocalStorage
-        const savedMode = localStorage.getItem('db_mode');
-        const savedUrl = localStorage.getItem('supabase_url');
-        const savedKey = localStorage.getItem('supabase_key');
+        // Load settings from SafeStorage
+        const savedMode = safeStorage.getItem('db_mode');
+        const savedUrl = safeStorage.getItem('supabase_url');
+        const savedKey = safeStorage.getItem('supabase_key');
         
         if (savedMode) state.databaseMode = savedMode;
         if (savedUrl) state.supabaseConfig.url = savedUrl;
@@ -82,10 +117,10 @@ const dbService = {
         } else {
             this.updateStatus(false, 'ทำงานในโหมดทดลองใช้ (Demo Mode)');
             // Initialize local data if empty
-            if (!localStorage.getItem('products')) localStorage.setItem('products', JSON.stringify(DEFAULT_PRODUCTS));
-            if (!localStorage.getItem('employees')) localStorage.setItem('employees', JSON.stringify(DEFAULT_EMPLOYEES));
-            if (!localStorage.getItem('customers')) localStorage.setItem('customers', JSON.stringify(DEFAULT_CUSTOMERS));
-            if (!localStorage.getItem('transactions')) localStorage.setItem('transactions', JSON.stringify([]));
+            if (!safeStorage.getItem('products')) safeStorage.setItem('products', JSON.stringify(DEFAULT_PRODUCTS));
+            if (!safeStorage.getItem('employees')) safeStorage.setItem('employees', JSON.stringify(DEFAULT_EMPLOYEES));
+            if (!safeStorage.getItem('customers')) safeStorage.setItem('customers', JSON.stringify(DEFAULT_CUSTOMERS));
+            if (!safeStorage.getItem('transactions')) safeStorage.setItem('transactions', JSON.stringify([]));
         }
     },
 
@@ -97,7 +132,9 @@ const dbService = {
         }
 
         try {
-            // Load supabase via CDN global object
+            if (!window.supabase) {
+                throw new Error('ระบบโหลดไลบรารี Supabase CDN ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต');
+            }
             supabase = window.supabase.createClient(url, key);
             
             // Test connection by reading products count
@@ -144,7 +181,7 @@ const dbService = {
                 return null;
             }
         } else {
-            const employees = JSON.parse(localStorage.getItem('employees')) || DEFAULT_EMPLOYEES;
+            const employees = JSON.parse(safeStorage.getItem('employees')) || DEFAULT_EMPLOYEES;
             return employees.find(emp => emp.pin === pin) || null;
         }
     },
@@ -160,7 +197,7 @@ const dbService = {
                 return DEFAULT_PRODUCTS;
             }
         } else {
-            return JSON.parse(localStorage.getItem('products')) || DEFAULT_PRODUCTS;
+            return JSON.parse(safeStorage.getItem('products')) || DEFAULT_PRODUCTS;
         }
     },
 
@@ -175,7 +212,7 @@ const dbService = {
                 return DEFAULT_CUSTOMERS;
             }
         } else {
-            return JSON.parse(localStorage.getItem('customers')) || DEFAULT_CUSTOMERS;
+            return JSON.parse(safeStorage.getItem('customers')) || DEFAULT_CUSTOMERS;
         }
     },
 
@@ -194,7 +231,7 @@ const dbService = {
                 return null;
             }
         } else {
-            const customers = JSON.parse(localStorage.getItem('customers')) || DEFAULT_CUSTOMERS;
+            const customers = JSON.parse(safeStorage.getItem('customers')) || DEFAULT_CUSTOMERS;
             return customers.find(c => c.phone === phone) || null;
         }
     },
@@ -230,7 +267,7 @@ const dbService = {
                 return null;
             }
         } else {
-            const customers = JSON.parse(localStorage.getItem('customers')) || DEFAULT_CUSTOMERS;
+            const customers = JSON.parse(safeStorage.getItem('customers')) || DEFAULT_CUSTOMERS;
             if (customer.id) {
                 const index = customers.findIndex(c => c.id === customer.id);
                 if (index !== -1) {
@@ -241,7 +278,7 @@ const dbService = {
                 customer.created_at = new Date().toISOString();
                 customers.push(customer);
             }
-            localStorage.setItem('customers', JSON.stringify(customers));
+            safeStorage.setItem('customers', JSON.stringify(customers));
             return customer;
         }
     },
@@ -260,7 +297,7 @@ const dbService = {
                 return [];
             }
         } else {
-            return JSON.parse(localStorage.getItem('transactions')) || [];
+            return JSON.parse(safeStorage.getItem('transactions')) || [];
         }
     },
 
@@ -280,9 +317,9 @@ const dbService = {
                 return null;
             }
         } else {
-            const transactions = JSON.parse(localStorage.getItem('transactions')) || [];
+            const transactions = JSON.parse(safeStorage.getItem('transactions')) || [];
             transactions.unshift(transaction);
-            localStorage.setItem('transactions', JSON.stringify(transactions));
+            safeStorage.setItem('transactions', JSON.stringify(transactions));
             return transaction;
         }
     }
@@ -363,6 +400,7 @@ async function handleLogin() {
 function logout() {
     state.currentUser = null;
     document.getElementById('auth-overlay').classList.remove('hidden');
+    clearCart();
 }
 
 // ==========================================
@@ -556,13 +594,26 @@ function clearCart() {
     state.cart = [];
     state.selectedCustomer = null;
     state.usePointsRedeem = false;
-    document.getElementById('use-points-checkbox').checked = false;
-    document.getElementById('customer-search-phone').value = '';
+    
+    const cb = document.getElementById('use-points-checkbox');
+    if (cb) cb.checked = false;
+    
+    const phoneInput = document.getElementById('customer-search-phone');
+    if (phoneInput) phoneInput.value = '';
+    
+    const searchContainer = document.getElementById('loyalty-search-container');
+    if (searchContainer) searchContainer.classList.remove('hidden');
+    
+    const activeUser = document.getElementById('loyalty-active-user');
+    if (activeUser) activeUser.classList.add('hidden');
+    
     renderCart();
 }
 
 function renderCart() {
     const cartContainer = document.getElementById('cart-items');
+    if (!cartContainer) return;
+    
     cartContainer.innerHTML = '';
     
     if (state.cart.length === 0) {
@@ -619,7 +670,8 @@ function renderCart() {
         } else {
             // Uncheck if points became insufficient
             state.usePointsRedeem = false;
-            document.getElementById('use-points-checkbox').checked = false;
+            const cb = document.getElementById('use-points-checkbox');
+            if (cb) cb.checked = false;
         }
     }
     
@@ -648,15 +700,19 @@ function renderCart() {
         // Show redeem points box
         document.getElementById('redeem-points-box').classList.remove('hidden');
         const cbLabel = document.querySelector('.redeem-toggle span');
-        cbLabel.textContent = `ใช้ 100 แต้ม แลกส่วนลด 50 บาท (มี ${state.selectedCustomer.points} แต้ม)`;
+        if (cbLabel) {
+            cbLabel.textContent = `ใช้ 100 แต้ม แลกส่วนลด 50 บาท (มี ${state.selectedCustomer.points} แต้ม)`;
+        }
         
         // Disable checkbox if customer points < 100
         const cb = document.getElementById('use-points-checkbox');
-        if (state.selectedCustomer.points < 100) {
-            cb.disabled = true;
-            cb.checked = false;
-        } else {
-            cb.disabled = false;
+        if (cb) {
+            if (state.selectedCustomer.points < 100) {
+                cb.disabled = true;
+                cb.checked = false;
+            } else {
+                cb.disabled = false;
+            }
         }
     } else {
         document.getElementById('earn-points-alert').classList.add('hidden');
@@ -702,8 +758,12 @@ async function searchLoyaltyCustomer() {
 function removeLoyaltyCustomer() {
     state.selectedCustomer = null;
     state.usePointsRedeem = false;
-    document.getElementById('use-points-checkbox').checked = false;
-    document.getElementById('customer-search-phone').value = '';
+    
+    const cb = document.getElementById('use-points-checkbox');
+    if (cb) cb.checked = false;
+    
+    const phoneInput = document.getElementById('customer-search-phone');
+    if (phoneInput) phoneInput.value = '';
     
     document.getElementById('loyalty-search-container').classList.remove('hidden');
     document.getElementById('loyalty-active-user').classList.add('hidden');
@@ -712,9 +772,11 @@ function removeLoyaltyCustomer() {
 }
 
 function togglePointsRedemption() {
-    const checked = document.getElementById('use-points-checkbox').checked;
-    state.usePointsRedeem = checked;
-    renderCart();
+    const cb = document.getElementById('use-points-checkbox');
+    if (cb) {
+        state.usePointsRedeem = cb.checked;
+        renderCart();
+    }
 }
 
 // ==========================================
@@ -749,26 +811,31 @@ function selectPaymentMethod(method) {
     
     if (method === 'cash') {
         document.getElementById('pay-cash-btn').classList.add('active');
-        cashSection.style.display = 'block';
+        if (cashSection) cashSection.style.display = 'block';
         document.getElementById('confirm-payment-btn').disabled = true; // wait for cash input
     } else {
         if (method === 'qr') document.getElementById('pay-qr-btn').classList.add('active');
         if (method === 'card') document.getElementById('pay-card-btn').classList.add('active');
-        cashSection.style.display = 'none';
+        if (cashSection) cashSection.style.display = 'none';
         document.getElementById('confirm-payment-btn').disabled = false; // direct confirm
     }
 }
 
 function quickCash(amount) {
     const input = document.getElementById('cash-received-input');
+    if (!input) return;
     const currentVal = parseFloat(input.value) || 0;
     input.value = currentVal + amount;
     calculateChange();
 }
 
 function calculateChange() {
-    const grandTotal = parseFloat(document.getElementById('cart-total').textContent.replace('฿', ''));
-    const inputVal = parseFloat(document.getElementById('cash-received-input').value) || 0;
+    const totalEl = document.getElementById('cart-total');
+    const inputEl = document.getElementById('cash-received-input');
+    if (!totalEl || !inputEl) return;
+    
+    const grandTotal = parseFloat(totalEl.textContent.replace('฿', ''));
+    const inputVal = parseFloat(inputEl.value) || 0;
     
     state.cashReceived = inputVal;
     
@@ -862,14 +929,14 @@ async function processCheckout() {
     const changeRow = document.getElementById('receipt-change-row');
     
     if (state.paymentMethod === 'cash') {
-        cashRecRow.style.display = 'flex';
-        changeRow.style.display = 'flex';
+        if (cashRecRow) cashRecRow.style.display = 'flex';
+        if (changeRow) changeRow.style.display = 'flex';
         document.getElementById('receipt-cash-received').textContent = `฿${state.cashReceived.toFixed(2)}`;
         const change = state.cashReceived - total;
         document.getElementById('receipt-change').textContent = `฿${change.toFixed(2)}`;
     } else {
-        cashRecRow.style.display = 'none';
-        changeRow.style.display = 'none';
+        if (cashRecRow) cashRecRow.style.display = 'none';
+        if (changeRow) changeRow.style.display = 'none';
     }
     
     const ptsSection = document.getElementById('receipt-points-section');
@@ -903,6 +970,7 @@ async function loadMembersTable() {
 
 function renderMembersTable(members) {
     const tbody = document.getElementById('members-table-body');
+    if (!tbody) return;
     tbody.innerHTML = '';
     
     if (members.length === 0) {
@@ -992,9 +1060,9 @@ async function deleteCustomer(id) {
             return;
         }
     } else {
-        let list = JSON.parse(localStorage.getItem('customers')) || DEFAULT_CUSTOMERS;
+        let list = JSON.parse(safeStorage.getItem('customers')) || DEFAULT_CUSTOMERS;
         list = list.filter(c => c.id !== id);
-        localStorage.setItem('customers', JSON.stringify(list));
+        safeStorage.setItem('customers', JSON.stringify(list));
     }
     loadMembersTable();
 }
@@ -1017,6 +1085,7 @@ function resetCustomerForm() {
 async function loadTransactionsTable() {
     const list = await dbService.getTransactions();
     const tbody = document.getElementById('transactions-table-body');
+    if (!tbody) return;
     tbody.innerHTML = '';
     
     if (list.length === 0) {
@@ -1128,11 +1197,11 @@ async function saveSupabaseSettings() {
     state.supabaseConfig.url = url;
     state.supabaseConfig.key = key;
     
-    localStorage.setItem('db_mode', mode);
-    localStorage.setItem('supabase_url', url);
-    localStorage.setItem('supabase_key', key);
+    safeStorage.setItem('db_mode', mode);
+    safeStorage.setItem('supabase_url', url);
+    safeStorage.setItem('supabase_key', key);
     
-    const status = await dbService.init();
+    await dbService.init();
     alert('บันทึกการตั้งค่าฐานข้อมูลสำเร็จ!');
     
     // Reload catalog/state
@@ -1142,9 +1211,9 @@ async function saveSupabaseSettings() {
 function clearAllData() {
     if (!confirm('คุณแน่ใจว่าต้องการล้างข้อมูลทั้งหมดในระบบ รวมถึงประวัติการสั่งซื้อและสถิติ? (ข้อมูล LocalStorage จะถูกลบทั้งหมด)')) return;
     
-    localStorage.removeItem('products');
-    localStorage.removeItem('customers');
-    localStorage.removeItem('transactions');
+    safeStorage.removeItem('products');
+    safeStorage.removeItem('customers');
+    safeStorage.removeItem('transactions');
     
     // re-init
     dbService.init();
@@ -1160,10 +1229,8 @@ async function generateMockSalesData() {
     const customerNames = ['นภาพร ตั้งมั่น', 'กมล สมบูรณ์', 'ธีรยุทธ เรืองงาม', 'สมหมาย รื่นเริง'];
     const customerPhones = ['0821234567', '0912223344', '0887778899', '0901112233'];
     
-    const categories = ['coffee', 'bakery'];
-    
     // Create mock customers in DB if demo mode
-    const customers = JSON.parse(localStorage.getItem('customers')) || [];
+    const customers = JSON.parse(safeStorage.getItem('customers')) || [];
     if (customers.length < 5) {
         for (let i = 0; i < customerNames.length; i++) {
             customers.push({
@@ -1174,7 +1241,7 @@ async function generateMockSalesData() {
                 created_at: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString()
             });
         }
-        localStorage.setItem('customers', JSON.stringify(customers));
+        safeStorage.setItem('customers', JSON.stringify(customers));
     }
     
     // Create transaction loop for 7 days
@@ -1254,14 +1321,13 @@ async function generateMockSalesData() {
     }
     
     if (state.databaseMode === 'supabase') {
-        // Warning: This could write lots of mock data to user database
         alert('ระบบจะสร้างข้อมูลตัวอย่างใน LocalStorage เท่านั้น กรุณาใช้ Demo Mode เพื่อทดสอบ Dashboard ที่สมบูรณ์แบบ');
         return;
     }
     
-    // Save to LocalStorage
-    localStorage.setItem('transactions', JSON.stringify(transactions));
-    localStorage.setItem('customers', JSON.stringify(customers));
+    // Save to SafeStorage
+    safeStorage.setItem('transactions', JSON.stringify(transactions));
+    safeStorage.setItem('customers', JSON.stringify(customers));
     
     alert('สร้างข้อมูลรายงานจำลองสำเร็จ! กรุณาเปิดหน้าแดชบอร์ดเพื่อดูสรุปรายงาน');
     
@@ -1286,10 +1352,17 @@ async function renderDashboardData() {
     const todaySales = todayTX.reduce((sum, t) => sum + parseFloat(t.total), 0);
     const totalPoints = customers.reduce((sum, c) => sum + (c.points || 0), 0);
     
-    document.getElementById('dashboard-today-sales').textContent = `฿${todaySales.toFixed(2)}`;
-    document.getElementById('dashboard-today-orders').textContent = `${todayTX.length} ออเดอร์`;
-    document.getElementById('dashboard-total-points').textContent = `${totalPoints} แต้ม`;
-    document.getElementById('dashboard-total-customers').textContent = `${customers.length} คน`;
+    const salesValEl = document.getElementById('dashboard-today-sales');
+    if (salesValEl) salesValEl.textContent = `฿${todaySales.toFixed(2)}`;
+    
+    const ordersValEl = document.getElementById('dashboard-today-orders');
+    if (ordersValEl) ordersValEl.textContent = `${todayTX.length} ออเดอร์`;
+    
+    const pointsValEl = document.getElementById('dashboard-total-points');
+    if (pointsValEl) pointsValEl.textContent = `${totalPoints} แต้ม`;
+    
+    const customersValEl = document.getElementById('dashboard-total-customers');
+    if (customersValEl) customersValEl.textContent = `${customers.length} คน`;
     
     // 2. Prepare daily sales chart data for past 7 days
     const dailySales = {};
@@ -1298,7 +1371,7 @@ async function renderDashboardData() {
     // Initialize past 7 days
     const daysTh = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
     const dateLabels = [];
-    const dayKeys = []; // formats to comparison string
+    const dayKeys = [];
     
     for (let i = 6; i >= 0; i--) {
         const d = new Date();
@@ -1310,12 +1383,10 @@ async function renderDashboardData() {
     
     transactions.forEach(t => {
         const txDate = new Date(t.created_at).toDateString();
-        // sum sales for past 7 days
         if (txDate in dailySales) {
             dailySales[txDate] += parseFloat(t.total);
         }
         
-        // sum items categories
         try {
             const items = JSON.parse(t.items);
             items.forEach(item => {
@@ -1333,79 +1404,124 @@ async function renderDashboardData() {
     const chartSalesData = dayKeys.map(k => dailySales[k]);
     
     // Render Line Chart
-    const ctxLine = document.getElementById('salesLineChart').getContext('2d');
-    if (salesChartInstance) salesChartInstance.destroy();
-    
-    salesChartInstance = new Chart(ctxLine, {
-        type: 'line',
-        data: {
-            labels: dateLabels,
-            datasets: [{
-                label: 'ยอดขายรายวัน (บาท)',
-                data: chartSalesData,
-                borderColor: '#8C6239',
-                backgroundColor: 'rgba(212, 163, 115, 0.1)',
-                borderWidth: 3,
-                tension: 0.3,
-                fill: true,
-                pointBackgroundColor: '#4A3525'
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { display: false }
+    const lineCanvas = document.getElementById('salesLineChart');
+    if (lineCanvas && window.Chart) {
+        const ctxLine = lineCanvas.getContext('2d');
+        if (salesChartInstance) salesChartInstance.destroy();
+        
+        salesChartInstance = new Chart(ctxLine, {
+            type: 'line',
+            data: {
+                labels: dateLabels,
+                datasets: [{
+                    label: 'ยอดขายรายวัน (บาท)',
+                    data: chartSalesData,
+                    borderColor: '#8C6239',
+                    backgroundColor: 'rgba(212, 163, 115, 0.1)',
+                    borderWidth: 3,
+                    tension: 0.3,
+                    fill: true,
+                    pointBackgroundColor: '#4A3525'
+                }]
             },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    grid: { color: '#EFECE6' }
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
                 },
-                x: {
-                    grid: { display: false }
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: '#EFECE6' }
+                    },
+                    x: {
+                        grid: { display: false }
+                    }
                 }
             }
-        }
-    });
+        });
+    }
     
     // Render Pie Chart
-    const ctxPie = document.getElementById('categoryPieChart').getContext('2d');
-    if (categoryChartInstance) categoryChartInstance.destroy();
-    
-    const pieDataValues = [categoriesSales.coffee, categoriesSales.bakery];
-    const totalCatSales = pieDataValues[0] + pieDataValues[1];
-    
-    categoryChartInstance = new Chart(ctxPie, {
-        type: 'doughnut',
-        data: {
-            labels: ['กาแฟ (Coffee)', 'เบเกอรี่ (Bakery)'],
-            datasets: [{
-                data: totalCatSales === 0 ? [1, 1] : pieDataValues, // default mock ratios if empty
-                backgroundColor: ['#6F4E37', '#D4A373'],
-                borderWidth: 2,
-                borderColor: '#FFF'
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: { boxWidth: 12, padding: 15 }
-                }
+    const pieCanvas = document.getElementById('categoryPieChart');
+    if (pieCanvas && window.Chart) {
+        const ctxPie = pieCanvas.getContext('2d');
+        if (categoryChartInstance) categoryChartInstance.destroy();
+        
+        const pieDataValues = [categoriesSales.coffee, categoriesSales.bakery];
+        const totalCatSales = pieDataValues[0] + pieDataValues[1];
+        
+        categoryChartInstance = new Chart(ctxPie, {
+            type: 'doughnut',
+            data: {
+                labels: ['กาแฟ (Coffee)', 'เบเกอรี่ (Bakery)'],
+                datasets: [{
+                    data: totalCatSales === 0 ? [1, 1] : pieDataValues,
+                    backgroundColor: ['#6F4E37', '#D4A373'],
+                    borderWidth: 2,
+                    borderColor: '#FFF'
+                }]
             },
-            cutout: '60%'
-        }
-    });
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { boxWidth: 12, padding: 15 }
+                    }
+                },
+                cutout: '60%'
+            }
+        });
+    }
 }
 
 // ==========================================
-// 12. App Initialization
+// 12. App Initialization & Explicit Global Assignments
 // ==========================================
 
 window.addEventListener('DOMContentLoaded', async () => {
-    // Initialized db mode
-    await dbService.init();
+    try {
+        await dbService.init();
+    } catch (e) {
+        console.error('Initialization failed:', e);
+    }
 });
+
+// Explicitly assign all template click handlers to window object 
+// to ensure they are available regardless of module scopes or browser strict security rules.
+window.pressPin = pressPin;
+window.clearPin = clearPin;
+window.deletePin = deletePin;
+window.switchView = switchView;
+window.logout = logout;
+window.filterCategory = filterCategory;
+window.clearCart = clearCart;
+window.searchLoyaltyCustomer = searchLoyaltyCustomer;
+window.removeLoyaltyCustomer = removeLoyaltyCustomer;
+window.togglePointsRedemption = togglePointsRedemption;
+window.openPaymentModal = openPaymentModal;
+window.closePaymentModal = closePaymentModal;
+window.selectPaymentMethod = selectPaymentMethod;
+window.quickCash = quickCash;
+window.calculateChange = calculateChange;
+window.processCheckout = processCheckout;
+window.closeReceiptAndReset = closeReceiptAndReset;
+window.searchMembers = searchMembers;
+window.handleCustomerSubmit = handleCustomerSubmit;
+window.resetCustomerForm = resetCustomerForm;
+window.editCustomer = editCustomer;
+window.deleteCustomer = deleteCustomer;
+window.viewReceiptDetail = viewReceiptDetail;
+window.toggleDatabaseMode = toggleDatabaseMode;
+window.saveSupabaseSettings = saveSupabaseSettings;
+window.generateMockSalesData = generateMockSalesData;
+window.selectTypeOption = selectTypeOption;
+window.selectSweetOption = selectSweetOption;
+window.confirmProductModifiers = confirmProductModifiers;
+window.closeModifierModal = closeModifierModal;
+window.updateCartQuantity = updateCartQuantity;
+window.removeFromCart = removeFromCart;
+window.clearAllData = clearAllData;
