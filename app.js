@@ -85,7 +85,7 @@ let state = {
 };
 
 // Supabase Client instance placeholder
-let supabase = null;
+let supabaseClient = null;
 
 // Chart instance references
 let salesChartInstance = null;
@@ -135,10 +135,10 @@ const dbService = {
             if (!window.supabase) {
                 throw new Error('ระบบโหลดไลบรารี Supabase CDN ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต');
             }
-            supabase = window.supabase.createClient(url, key);
+            supabaseClient = window.supabase.createClient(url, key);
             
             // Test connection by reading products count
-            const { data, error } = await supabase.from('products').select('count', { count: 'exact', head: true });
+            const { data, error } = await supabaseClient.from('products').select('count', { count: 'exact', head: true });
             
             if (error) throw error;
             
@@ -166,9 +166,9 @@ const dbService = {
 
     // --- Core Queries ---
     async verifyEmployeePIN(pin) {
-        if (state.databaseMode === 'supabase' && supabase) {
+        if (state.databaseMode === 'supabase' && supabaseClient) {
             try {
-                const { data, error } = await supabase
+                const { data, error } = await supabaseClient
                     .from('employees')
                     .select('*')
                     .eq('pin', pin)
@@ -187,9 +187,9 @@ const dbService = {
     },
 
     async getProducts() {
-        if (state.databaseMode === 'supabase' && supabase) {
+        if (state.databaseMode === 'supabase' && supabaseClient) {
             try {
-                const { data, error } = await supabase.from('products').select('*');
+                const { data, error } = await supabaseClient.from('products').select('*');
                 if (error) throw error;
                 return data;
             } catch (err) {
@@ -202,9 +202,9 @@ const dbService = {
     },
 
     async getCustomers() {
-        if (state.databaseMode === 'supabase' && supabase) {
+        if (state.databaseMode === 'supabase' && supabaseClient) {
             try {
-                const { data, error } = await supabase.from('customers').select('*').order('name');
+                const { data, error } = await supabaseClient.from('customers').select('*').order('name');
                 if (error) throw error;
                 return data;
             } catch (err) {
@@ -217,9 +217,9 @@ const dbService = {
     },
 
     async searchCustomerByPhone(phone) {
-        if (state.databaseMode === 'supabase' && supabase) {
+        if (state.databaseMode === 'supabase' && supabaseClient) {
             try {
-                const { data, error } = await supabase
+                const { data, error } = await supabaseClient
                     .from('customers')
                     .select('*')
                     .eq('phone', phone)
@@ -237,12 +237,12 @@ const dbService = {
     },
 
     async createOrUpdateCustomer(customer) {
-        if (state.databaseMode === 'supabase' && supabase) {
+        if (state.databaseMode === 'supabase' && supabaseClient) {
             try {
                 let result;
                 if (customer.id) {
                     // Update
-                    const { data, error } = await supabase
+                    const { data, error } = await supabaseClient
                         .from('customers')
                         .update({ name: customer.name, phone: customer.phone, points: customer.points })
                         .eq('id', customer.id)
@@ -252,7 +252,7 @@ const dbService = {
                     result = data;
                 } else {
                     // Insert
-                    const { data, error } = await supabase
+                    const { data, error } = await supabaseClient
                         .from('customers')
                         .insert([{ name: customer.name, phone: customer.phone, points: customer.points }])
                         .select()
@@ -284,9 +284,9 @@ const dbService = {
     },
 
     async getTransactions() {
-        if (state.databaseMode === 'supabase' && supabase) {
+        if (state.databaseMode === 'supabase' && supabaseClient) {
             try {
-                const { data, error } = await supabase
+                const { data, error } = await supabaseClient
                     .from('transactions')
                     .select('*')
                     .order('created_at', { ascending: false });
@@ -302,9 +302,9 @@ const dbService = {
     },
 
     async saveTransaction(transaction) {
-        if (state.databaseMode === 'supabase' && supabase) {
+        if (state.databaseMode === 'supabase' && supabaseClient) {
             try {
-                const { data, error } = await supabase
+                const { data, error } = await supabaseClient
                     .from('transactions')
                     .insert([transaction])
                     .select()
@@ -1053,8 +1053,8 @@ function editCustomer(id) {
 async function deleteCustomer(id) {
     if (!confirm('ยืนยันที่จะลบสมาชิกท่านนี้ออกจากระบบ?')) return;
     
-    if (state.databaseMode === 'supabase' && supabase) {
-        const { error } = await supabase.from('customers').delete().eq('id', id);
+    if (state.databaseMode === 'supabase' && supabaseClient) {
+        const { error } = await supabaseClient.from('customers').delete().eq('id', id);
         if (error) {
             alert('ลบข้อมูลไม่สำเร็จ: ' + error.message);
             return;
