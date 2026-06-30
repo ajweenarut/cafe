@@ -6,6 +6,39 @@
     <title>Caffeine POS - ระบบสั่งขายสะสมแต้มร้านกาแฟ</title>
     <!-- Stylesheet -->
     <link rel="stylesheet" href="style.css">
+    
+    <!-- Global JS Error Diagnostic Tool -->
+    <script>
+        window.onerror = function(message, source, lineno, colno, error) {
+            alert("ตรวจพบข้อผิดพลาดระบบ (JS Error):\n" + message + "\n\nไฟล์: " + source + "\nบรรทัดที่: " + lineno);
+            return false;
+        };
+
+        function safePressPin(num) {
+            if (typeof window.pressPin === 'function') {
+                window.pressPin(num);
+            } else {
+                alert("ไม่สามารถรันระบบได้: ไม่พบไฟล์ app.js หรือแอปโหลดไม่สำเร็จ!\n\nกรุณาตรวจสอบว่า:\n1. มีไฟล์ app.js อยู่คู่กับ index.html หรือไม่\n2. คุณได้ทำการเชื่อมต่ออินเทอร์เน็ตหรือไม่ (เนื่องจากต้องดึงไลบรารีจาก CDN)");
+            }
+        }
+        
+        function safeClearPin() {
+            if (typeof window.clearPin === 'function') {
+                window.clearPin();
+            } else {
+                alert("ไม่สามารถรันระบบได้: โหลดไฟล์ app.js ไม่สำเร็จ");
+            }
+        }
+        
+        function safeDeletePin() {
+            if (typeof window.deletePin === 'function') {
+                window.deletePin();
+            } else {
+                alert("ไม่สามารถรันระบบได้: โหลดไฟล์ app.js ไม่สำเร็จ");
+            }
+        }
+    </script>
+
     <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Chart.js for Dashboard -->
@@ -34,18 +67,18 @@
             <div id="auth-error" class="auth-error"></div>
             
             <div class="pin-keyboard">
-                <button class="pin-btn" onclick="pressPin('1')">1</button>
-                <button class="pin-btn" onclick="pressPin('2')">2</button>
-                <button class="pin-btn" onclick="pressPin('3')">3</button>
-                <button class="pin-btn" onclick="pressPin('4')">4</button>
-                <button class="pin-btn" onclick="pressPin('5')">5</button>
-                <button class="pin-btn" onclick="pressPin('6')">6</button>
-                <button class="pin-btn" onclick="pressPin('7')">7</button>
-                <button class="pin-btn" onclick="pressPin('8')">8</button>
-                <button class="pin-btn" onclick="pressPin('9')">9</button>
-                <button class="pin-btn action" onclick="clearPin()">เคลียร์</button>
-                <button class="pin-btn" onclick="pressPin('0')">0</button>
-                <button class="pin-btn action" onclick="deletePin()"><i class="fa-solid fa-backspace"></i></button>
+                <button class="pin-btn" onclick="safePressPin('1')">1</button>
+                <button class="pin-btn" onclick="safePressPin('2')">2</button>
+                <button class="pin-btn" onclick="safePressPin('3')">3</button>
+                <button class="pin-btn" onclick="safePressPin('4')">4</button>
+                <button class="pin-btn" onclick="safePressPin('5')">5</button>
+                <button class="pin-btn" onclick="safePressPin('6')">6</button>
+                <button class="pin-btn" onclick="safePressPin('7')">7</button>
+                <button class="pin-btn" onclick="safePressPin('8')">8</button>
+                <button class="pin-btn" onclick="safePressPin('9')">9</button>
+                <button class="pin-btn action" onclick="safeClearPin()">เคลียร์</button>
+                <button class="pin-btn" onclick="safePressPin('0')">0</button>
+                <button class="pin-btn action" onclick="safeDeletePin()"><i class="fa-solid fa-backspace"></i></button>
             </div>
         </div>
     </div>
